@@ -1,85 +1,69 @@
 import asyncio
-import logging
-import sqlite3
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, FSInputFile
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-import aiohttp
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import TOKEN
+import keyboard as kb
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
-logging.basicConfig(level=logging.INFO)
+dp = Dispatcher()
 
 
-class Form(StatesGroup):
-    name = State()
-    age = State()
-    grade = State()
+# --- /dynamic ---
+@dp.message(Command("dynamic"))
+async def dynamic(message: Message):
+    await message.answer("Нажми кнопку 👇", reply_markup=kb.start_kb)
 
 
-def init_db():
-    conn = sqlite3.connect('school_data.db')
-    cur = conn.cursor()
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS students (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    age INTEGER NOT NULL,
-    grade TEXT NOT NULL)
-    ''')
-    conn.commit()
-    conn.close()
+@dp.callback_query(F.data == "show_more")
+async def show_more(callback: CallbackQuery):
+    await callback.message.edit_text("Выбери опцию:", reply_markup=kb.options_kb)
 
 
-init_db()
+@dp.callback_query(F.data.in_(["option_1", "option_2"]))
+async def option_selected(callback: CallbackQuery):
+    await callback.answer()
 
 
+
+# ---------- Reply-клавиатура ----------
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Привет"), KeyboardButton(text="Пока")]
+    ],
+    resize_keyboard=True
+)
+
+# ---------- Хендлеры ----------
 @dp.message(CommandStart())
-async def start(message: Message, state: FSMContext):
-    await message.answer("Привет! Как тебя зовут?")
-    await state.set_state(Form.name)
+async def start(message: Message):
+    await message.answer(
+        f"Привет, {message.from_user.first_name}! Выбери кнопку 👇",
+        reply_markup=main_menu
+    )
+
+@dp.message(Command("links"))
+async def show_links(message: Message):
+    await message.answer(
+        "Вот полезные ссылки 👇",
+        reply_markup=kb.links_keyboard
+    )
 
 
-@dp.message(Form.name)
-async def name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Сколько тебе лет?")
-    await state.set_state(Form.age)
+@dp.message(F.text == "Привет")
+async def say_hello(message: Message):
+    await message.answer(f"Привет, {message.from_user.first_name}!")
+
+@dp.message(F.text == "Пока")
+async def say_bye(message: Message):
+    await message.answer(f"До свидания, {message.from_user.first_name}!")
 
 
-@dp.message(Form.age)
-async def age(message: Message, state: FSMContext):
-    await state.update_data(age=message.text)
-    await message.answer("В каком ты классе?")
-    await state.set_state(Form.grade)
-
-
-@dp.message(Form.grade)
-async def grade(message: Message, state: FSMContext):
-    await state.update_data(grade=message.text)
-    user_data = await state.get_data()
-
-    # сохраняем в базу данных
-    conn = sqlite3.connect('school_data.db')
-    cur = conn.cursor()
-    cur.execute('''
-    INSERT INTO students (name, age, grade) VALUES (?, ?, ?)
-    ''', (user_data['name'], user_data['age'], user_data['grade']))
-    conn.commit()
-    conn.close()
-
-    await message.answer("Спасибо! Данные сохранены ✅")
-    await state.clear()
-
-
+# ---------- Запуск ----------
 async def main():
     await dp.start_polling(bot)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
+
